@@ -69,9 +69,6 @@ namespace SeapowerMultiplayer
         // Toggle for showing/hiding sync health section panels
         private bool _syncPanelsVisible = false;
 
-        // TF dropdown state
-        private byte? _tfDropdownOpenFor; // which player's dropdown is open, null = none
-
         // Panel expand/collapse state (clickable header toggle)
         private bool _panelExpanded = true;
 
@@ -397,12 +394,6 @@ namespace SeapowerMultiplayer
             GUILayout.Space(4);
             DrawConnection();
             GUILayout.Space(6);
-            bool isSteamLobby = Plugin.Instance.CfgTransport.Value == "Steam" && SteamLobbyManager.InLobby;
-            if (NetworkManager.Instance.IsConnected || isSteamLobby)
-            {
-                DrawPlayerList();
-                GUILayout.Space(6);
-            }
             DrawTimeControls();
             GUILayout.Space(6);
 
@@ -638,7 +629,7 @@ namespace SeapowerMultiplayer
             }
             else if (inLobby)
             {
-                GUILayout.Label($"Lobby: {SteamLobbyManager.MemberCount}/{Plugin.Instance.CfgMaxPlayers.Value} players", _labelStyle);
+                GUILayout.Label($"Lobby: {SteamLobbyManager.MemberCount}/2 players", _labelStyle);
             }
 
             GUILayout.Space(4);
@@ -658,7 +649,12 @@ namespace SeapowerMultiplayer
             }
             else if (inLobby)
             {
-                // In lobby — invite buttons are in the player list section
+                // In lobby, waiting for peer
+                if (GUILayout.Button("Invite Friend", _buttonStyle))
+                    SteamLobbyManager.InviteFriend();
+
+                GUILayout.Space(2);
+
                 if (GUILayout.Button("Leave Lobby", _buttonStyle))
                     SteamLobbyManager.LeaveLobby();
             }
@@ -682,10 +678,10 @@ namespace SeapowerMultiplayer
             switch (state)
             {
                 case SimState.WaitingForClient:
-                    GUILayout.Label($"Waiting for players ({SimSyncManager.ReadyCount}/{SimSyncManager.ExpectedCount} ready)", _warningStyle);
+                    GUILayout.Label("Waiting for client to load...", _warningStyle);
                     break;
                 case SimState.Synchronized when GameTime.IsPaused():
-                    GUILayout.Label("All players ready \u2014 unpause to begin", _successStyle);
+                    GUILayout.Label("Client ready \u2014 unpause to begin", _successStyle);
                     break;
                 case SimState.Synchronized:
                     GUILayout.Label("Sim synced", _successStyle);
@@ -696,145 +692,6 @@ namespace SeapowerMultiplayer
             {
                 GUILayout.Label("Receiving scene...", _warningStyle);
             }
-        }
-
-        // ── Player list section ──────────────────────────────────────────────
-
-        private void DrawPlayerList()
-        {
-            DrawSectionTitle("\u2694", "PLAYERS");
-
-            bool isHost = NetworkManager.Instance.IsHost;
-            bool isSteam = Plugin.Instance.CfgTransport.Value == "Steam";
-
-            // Invite buttons (host only, Steam only)
-            if (isHost && isSteam && SteamLobbyManager.InLobby)
-            {
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Invite to Blue", _buttonStyle))
-                {
-                    PlayerRegistry.PendingInviteTeam = 0;
-                    SteamLobbyManager.InviteFriend();
-                }
-                if (GUILayout.Button("Invite to Red", _buttonStyle))
-                {
-                    PlayerRegistry.PendingInviteTeam = 1;
-                    SteamLobbyManager.InviteFriend();
-                }
-                GUILayout.EndHorizontal();
-                GUILayout.Space(4);
-            }
-
-            // Collect players by team
-            var bluePlayers = new System.Collections.Generic.List<PlayerInfo>();
-            var redPlayers = new System.Collections.Generic.List<PlayerInfo>();
-            foreach (var kvp in PlayerRegistry.Players)
-            {
-                if (kvp.Value.TeamSide == 0)
-                    bluePlayers.Add(kvp.Value);
-                else
-                    redPlayers.Add(kvp.Value);
-            }
-
-            // Blue team
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("\u25cf", _sectionHeaderStyle, GUILayout.Width(14));
-            GUILayout.Label("BLUE TEAM", _teamLabelStyle);
-            GUILayout.EndHorizontal();
-            GUILayout.Box("", _separatorStyle!, GUILayout.ExpandWidth(true));
-            foreach (var p in bluePlayers)
-                DrawPlayerEntry(p, isHost);
-
-            GUILayout.Space(4);
-
-            // Red team
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("\u25cf", _criticalStyle!, GUILayout.Width(14));
-            GUILayout.Label("RED TEAM", _teamLabelStyle);
-            GUILayout.EndHorizontal();
-            GUILayout.Box("", _separatorStyle!, GUILayout.ExpandWidth(true));
-            foreach (var p in redPlayers)
-                DrawPlayerEntry(p, isHost);
-        }
-
-        private void DrawPlayerEntry(PlayerInfo p, bool isHost)
-        {
-            string tfLabel = p.AssignedTfNames.Count == 0
-                ? "All Forces"
-                : $"{p.AssignedTfNames.Count} TF{(p.AssignedTfNames.Count > 1 ? "s" : "")}";
-            string readyStr = p.IsReady ? " \u2713" : "";
-            string localStr = p.PlayerId == PlayerRegistry.LocalPlayerId ? " (you)" : "";
-
-            // Row 1: name + ready indicator
-            GUILayout.Label($"  {p.DisplayName}{localStr}{readyStr}", _labelStyle);
-
-            if (isHost)
-            {
-                // Row 2: force assignment + swap team
-                GUILayout.BeginHorizontal();
-                GUILayout.Space(12);
-
-                // TF dropdown button
-                if (GUILayout.Button(tfLabel, _buttonStyle, GUILayout.Width(120)))
-                {
-                    if (_tfDropdownOpenFor == p.PlayerId)
-                        _tfDropdownOpenFor = null;
-                    else
-                        _tfDropdownOpenFor = p.PlayerId;
-                }
-
-                GUILayout.Space(4);
-
-                // Team swap button — clear label with color hint
-                string swapLabel = p.TeamSide == 0 ? "\u21e8 Move to Red" : "\u21e8 Move to Blue";
-                if (GUILayout.Button(swapLabel, _buttonStyle))
-                {
-                    PlayerRegistry.HostAssignTeam(p.PlayerId, (byte)(p.TeamSide == 0 ? 1 : 0));
-                    _tfDropdownOpenFor = null;
-                }
-
-                GUILayout.EndHorizontal();
-            }
-            else
-            {
-                GUILayout.Label($"    {tfLabel}", _dimLabelStyle);
-            }
-
-            GUILayout.Space(2);
-
-            // Draw dropdown list if open for this player
-            if (isHost && _tfDropdownOpenFor == p.PlayerId)
-                DrawTfDropdown(p);
-        }
-
-        private void DrawTfDropdown(PlayerInfo p)
-        {
-            var options = PlayerRegistry.GetTeamGroups(p.TeamSide);
-
-            GUILayout.BeginVertical(_dropdownBoxStyle!, GUILayout.MaxWidth(PanelWidth - Margin * 2));
-
-            // "All" option (clears selections)
-            bool isAll = p.AssignedTfNames.Count == 0;
-            if (GUILayout.Button(isAll ? "> All" : "  All", _buttonStyle))
-                PlayerRegistry.HostAssignAll(p.PlayerId);
-
-            // Individual formation/unit group options (toggle checkboxes)
-            foreach (var (groupKey, displayName, unitCount) in options)
-            {
-                bool selected = p.AssignedTfNames.Contains(groupKey);
-                string prefix = selected ? "[x] " : "[ ] ";
-                string countStr = unitCount > 1 ? $" ({unitCount})" : "";
-                string label = displayName + countStr;
-                if (label.Length > 30) label = label.Substring(0, 27) + "...";
-                if (GUILayout.Button($"{prefix}{label}", _buttonStyle))
-                    PlayerRegistry.HostToggleTaskforce(p.PlayerId, groupKey);
-            }
-
-            // Done button to close
-            if (GUILayout.Button("Done", _buttonStyle))
-                _tfDropdownOpenFor = null;
-
-            GUILayout.EndVertical();
         }
 
         // ── Time compression section ──────────────────────────────────────────
