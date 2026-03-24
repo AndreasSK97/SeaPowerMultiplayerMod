@@ -852,6 +852,11 @@ namespace SeapowerMultiplayer
             // Master header — foldout toggle for all sync panels
             var overall = ComputeOverallStatus();
             DrawSectionTitle("\u21bb", "SYNC HEALTH");
+            
+            // Resync tip
+            GUILayout.Space(4);
+            GUILayout.Label("  Tip: Press Ctrl+F10 to force a resync", _dimLabelStyle);
+
             _syncPanelsVisible = DrawSectionHeader("Details", _syncPanelsVisible, overall);
             if (!_syncPanelsVisible) return;
 
